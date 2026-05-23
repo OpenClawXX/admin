@@ -1,0 +1,28 @@
+-- +goose Up
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS code VARCHAR(20) DEFAULT '';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS type VARCHAR(20) DEFAULT 'daily';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS priority VARCHAR(10) DEFAULT 'medium';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS requester VARCHAR(200) DEFAULT '';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS budget NUMERIC(12,2);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS remark TEXT DEFAULT '';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS actual_end_date TIMESTAMP WITH TIME ZONE;
+
+CREATE TABLE IF NOT EXISTS project_members (
+    id BIGSERIAL PRIMARY KEY,
+    project_id BIGINT NOT NULL REFERENCES projects(id),
+    user_id BIGINT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(project_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id);
+
+-- +goose Down
+DROP TABLE IF EXISTS project_members;
+ALTER TABLE projects DROP COLUMN IF EXISTS actual_end_date;
+ALTER TABLE projects DROP COLUMN IF EXISTS remark;
+ALTER TABLE projects DROP COLUMN IF EXISTS budget;
+ALTER TABLE projects DROP COLUMN IF EXISTS requester;
+ALTER TABLE projects DROP COLUMN IF EXISTS priority;
+ALTER TABLE projects DROP COLUMN IF EXISTS type;
+ALTER TABLE projects DROP COLUMN IF EXISTS code;
