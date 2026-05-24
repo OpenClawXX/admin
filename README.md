@@ -160,6 +160,10 @@ npm run dev
 | supervisor1 | admin123 | 主管 |
 | engineer1 | admin123 | 工程师 |
 
+## 部署
+
+生产环境部署请参考 [DEPLOY.md](DEPLOY.md)（宝塔面板部署指南）
+
 ## 更新日志
 
 详见 [update.md](update.md)
