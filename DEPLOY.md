@@ -1,55 +1,71 @@
 # 宝塔面板部署指南
 
-## 一、服务器要求
+## 一、服务器准备
 
-| 项目 | 最低配置 | 推荐配置 |
-|------|---------|---------|
-| 操作系统 | Ubuntu 20.04+ / Debian 11+ | Ubuntu 22.04 LTS |
+### 1.1 推荐配置
+
+| 项目 | 最低 | 推荐 |
+|------|------|------|
+| 系统 | Ubuntu 20.04 | Ubuntu 22.04 LTS |
 | CPU | 2 核 | 4 核 |
 | 内存 | 2 GB | 4 GB |
 | 硬盘 | 40 GB SSD | 80 GB SSD |
 
----
-
-## 二、安装宝塔面板
+### 1.2 安装宝塔面板
 
 ```bash
 wget -O install.sh https://download.bt.cn/install/install-ubuntu_6.0.sh && sudo bash install.sh ed8484bec
 ```
 
-安装完成后记录面板地址、用户名、密码，登录面板。
+安装完成后记录面板地址、用户名、密码。
 
----
+### 1.3 安装基础软件
 
-## 三、宝塔应用商店安装软件
+登录宝塔面板 → **软件商店** → 安装：
 
-登录宝塔面板 → **软件商店** → 搜索安装：
-
-| 软件 | 用途 |
+| 软件 | 说明 |
 |------|------|
-| **Nginx** | 反向代理 + 前端静态文件 |
+| **Nginx** | 反向代理 + 前端托管 |
 | **PostgreSQL** | 数据库 |
 
 ---
 
-## 四、部署后端
+## 二、项目文件说明
 
-### 4.1 创建目录
+```
+admin/                      # GitHub 仓库根目录
+├── ops-server              # 后端二进制 (42MB, Linux AMD64)
+├── dist/                   # 前端编译产物 (35个文件)
+│   ├── index.html
+│   └── assets/
+├── migrations/             # 数据库迁移脚本
+│   ├── 001_init.sql
+│   ├── 002_project_enhance.sql
+│   └── 003_knowledge_base.sql
+├── .env.example            # 后端配置模板
+└── web/                    # 前端源码（如需重新编译）
+```
+
+---
+
+## 三、部署后端
+
+### 3.1 创建目录
 
 ```bash
 mkdir -p /opt/ops-platform/uploads/branding
 mkdir -p /opt/ops-platform/uploads/kb
 ```
 
-### 4.2 上传文件
+### 3.2 上传 ops-server
 
-将 GitHub 仓库根目录的 `ops-server` 上传到 `/opt/ops-platform/`
+将 `ops-server` 上传到 `/opt/ops-platform/`
 
 ```bash
 chmod +x /opt/ops-platform/ops-server
 ```
 
-### 4.3 配置环境变量
+### 3.3 创建配置文件
 
 ```bash
 cat > /opt/ops-platform/.env << 'EOF'
@@ -63,27 +79,20 @@ DB_PASSWORD=你的PostgreSQL密码
 DB_NAME=ops_platform
 DB_SSLMODE=disable
 
-JWT_SECRET=替换为随机字符串
+JWT_SECRET=运行 openssl rand -base64 32 生成
 JWT_EXPIRE_HOUR=24
 EOF
 ```
 
-生成 JWT Secret：
-```bash
-openssl rand -base64 32
-```
+### 3.4 创建数据库
 
-### 4.4 创建数据库
+宝塔 → PostgreSQL → 管理 → SQL执行器，依次执行三个迁移文件：
 
-宝塔 PostgreSQL 管理 → SQL执行器，依次执行：
+1. `migrations/001_init.sql`
+2. `migrations/002_project_enhance.sql`
+3. `migrations/003_knowledge_base.sql`
 
-```
-migrations/001_init.sql
-migrations/002_project_enhance.sql
-migrations/003_knowledge_base.sql
-```
-
-### 4.5 创建 systemd 服务
+### 3.5 创建 systemd 服务
 
 ```bash
 cat > /etc/systemd/system/ops-platform.service << 'EOF'
@@ -107,33 +116,36 @@ EOF
 systemctl daemon-reload
 systemctl enable ops-platform
 systemctl start ops-platform
-systemctl status ops-platform
 ```
+
+验证：`systemctl status ops-platform` 应显示 `active (running)`
 
 ---
 
-## 五、部署前端
+## 四、部署前端
 
-### 5.1 上传前端文件
+### 4.1 上传 dist 文件
 
-将 GitHub 仓库根目录的 `dist/` 文件夹内容上传到：
+将 `dist/` 内所有文件上传到 `/www/wwwroot/ops-platform/`
 
 ```
 /www/wwwroot/ops-platform/
 ├── index.html
 └── assets/
+    ├── *.js
+    └── *.css
 ```
 
-### 5.2 添加站点
+### 4.2 添加站点
 
-宝塔面板 → **网站** → **添加站点**：
-- 域名：你的域名或IP
+宝塔 → 网站 → 添加站点：
+- 域名：你的域名或服务器IP
 - 根目录：`/www/wwwroot/ops-platform`
-- PHP版本：纯静态
+- PHP版本：**纯静态**
 
-### 5.3 配置 Nginx
+### 4.3 配置 Nginx
 
-点击站点名 → **配置文件**，替换为：
+点击站点名 → **配置文件**，全部替换为：
 
 ```nginx
 server {
@@ -154,7 +166,7 @@ server {
         proxy_read_timeout 300s;
     }
 
-    # 上传文件访问
+    # 上传文件
     location /uploads/ {
         proxy_pass http://127.0.0.1:8080/uploads/;
     }
@@ -164,7 +176,7 @@ server {
         proxy_pass http://127.0.0.1:8080/swagger/;
     }
 
-    # Vue Router
+    # Vue Router history 模式
     location / {
         try_files $uri $uri/ /index.html;
     }
@@ -181,77 +193,87 @@ server {
 }
 ```
 
-重载配置：`nginx -t && systemctl reload nginx`
+保存后重载：`nginx -t && systemctl reload nginx`
 
 ---
 
-## 六、防火墙
+## 五、防火墙
 
 宝塔 → 安全 → 防火墙 → 放行 80 和 443
 
 ---
 
-## 七、SSL（推荐）
+## 六、SSL 证书（推荐）
 
 站点 → SSL → Let's Encrypt → 申请 → 开启强制 HTTPS
 
 ---
 
-## 八、验证
+## 七、验证部署
 
-1. 访问 `http://你的域名` → 看到登录页
-2. 用 `admin / admin123` 登录
-3. 访问 `http://你的域名/swagger/index.html` → API 文档
+| 检查项 | 地址 | 预期结果 |
+|--------|------|---------|
+| 登录页 | `http://你的域名` | 显示登录页面 |
+| 登录 | admin / admin123 | 进入工作台 |
+| API文档 | `http://你的域名/swagger/index.html` | 显示Swagger |
 
 ---
 
-## 九、更新部署
+## 八、日常运维
+
+### 更新后端
 
 ```bash
-# 上传新的 ops-server 到 /opt/ops-platform/
+# 上传新的 ops-server 覆盖旧文件
 chmod +x /opt/ops-platform/ops-server
 systemctl restart ops-platform
+```
 
-# 上传新的 dist/ 到 /www/wwwroot/ops-platform/
+### 更新前端
+
+```bash
+# 上传新的 dist/ 覆盖旧文件到 /www/wwwroot/ops-platform/
 # 无需重启，刷新浏览器即可
 ```
 
----
-
-## 十、数据库备份
+### 更新数据库
 
 ```bash
-# 宝塔 → 计划任务 → 添加
-# 类型：备份数据库
-# 周期：每天 03:00
-# 数据库：ops_platform
+# 执行新的迁移脚本
+psql -U postgres -d ops_platform -f /path/to/new_migration.sql
+```
+
+### 查看日志
+
+```bash
+journalctl -u ops-platform -f
+```
+
+### 重启服务
+
+```bash
+systemctl restart ops-platform
 ```
 
 ---
 
-## 十一、项目文件说明
+## 九、数据备份
 
-```
-admin/                      # GitHub 仓库根目录
-├── ops-server              # Go 后端二进制（Linux AMD64，42MB）
-├── dist/                   # 前端编译产物（直接部署到 Nginx）
-│   ├── index.html
-│   └── assets/
-├── migrations/             # 数据库迁移脚本（3个）
-├── web/                    # 前端源码
-├── cmd/                    # 后端源码
-├── internal/               # 后端业务代码
-├── config/                 # 配置
-├── docs/                   # Swagger 文档
-├── .env.example            # 环境变量模板
-├── DEPLOY.md               # 本文档
-├── README.md               # 项目说明
-└── update.md               # 更新日志
-```
+宝塔 → 计划任务 → 添加：
 
-| 文件 | 用途 | 部署位置 |
-|------|------|---------|
-| `ops-server` | 后端服务 | `/opt/ops-platform/` |
-| `dist/*` | 前端页面 | `/www/wwwroot/ops-platform/` |
-| `migrations/*.sql` | 建表脚本 | 执行一次即可 |
-| `.env.example` | 配置模板 | 复制为 `.env` 使用 |
+| 类型 | 周期 | 说明 |
+|------|------|------|
+| 备份数据库 | 每天 03:00 | 选择 PostgreSQL → ops_platform |
+| 备份网站 | 每天 03:30 | 选择站点 |
+
+---
+
+## 十、常见问题
+
+| 问题 | 排查 |
+|------|------|
+| 白屏 | 检查 `index.html` 是否在 `/www/wwwroot/ops-platform/` |
+| API 404 | `systemctl status ops-platform` 检查后端是否运行 |
+| 登录失败 | 检查 `.env` 中数据库密码是否正确 |
+| 上传失败 | 检查 `uploads/` 目录权限：`chmod 755 /opt/ops-platform/uploads` |
+| 忘记密码 | 数据库执行 `UPDATE users SET password='...' WHERE username='admin'` |
