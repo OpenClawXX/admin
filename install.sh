@@ -37,8 +37,36 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     echo ">> apt-get install nginx postgresql postgresql-client"
     apt-get install -y nginx postgresql postgresql-client
     echo ""
+
+    # 配置 PostgreSQL 允许密码认证
+    PG_VERSION=$(sudo -u postgres psql -t -c "SELECT version();" 2>/dev/null | grep -oP '\d+' | head -1)
+    PG_CONF_DIR=$(find /etc/postgresql -maxdepth 1 -type d 2>/dev/null | head -1)
+    if [ -z "$PG_CONF_DIR" ]; then
+        PG_CONF_DIR="/etc/postgresql/${PG_VERSION}/main"
+    fi
+
+    echo ">> 配置 PostgreSQL 密码认证"
+    if [ -f "$PG_CONF_DIR/pg_hba.conf" ]; then
+        # 备份原配置
+        cp "$PG_CONF_DIR/pg_hba.conf" "$PG_CONF_DIR/pg_hba.conf.bak"
+        # 将 peer/scram-sha-256 改为 md5（允许密码登录）
+        sed -i 's/local\s*all\s*all\s*peer/local   all             all                                     md5/' "$PG_CONF_DIR/pg_hba.conf"
+        sed -i 's/host\s*all\s*all\s*127.0.0.1\/32\s*scram-sha-256/host    all             all             127.0.0.1/32            md5/' "$PG_CONF_DIR/pg_hba.conf"
+        sed -i 's/host\s*all\s*all\s*::1\/128\s*scram-sha-256/host    all             all             ::1/128                 md5/' "$PG_CONF_DIR/pg_hba.conf"
+    fi
+
+    # 确保监听所有地址
+    if [ -f "$PG_CONF_DIR/postgresql.conf" ]; then
+        sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
+        sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
+    fi
+
+    systemctl restart postgresql
+    sleep 2
+
     echo ">> 设置 postgres 用户密码"
     sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+
 elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "rocky" ]; then
     echo ">> yum install nginx postgresql-server postgresql"
     yum install -y nginx postgresql-server postgresql
@@ -61,35 +89,8 @@ echo ""
 echo "[2/7] 下载项目文件..."
 echo "-------------------------------------------"
 
-# 停止旧服务（如果存在）
-systemctl stop ops-platform 2>/dev/null || true
-
-# 清理旧的安装标记和配置（保留 uploads）
-rm -f "$WORK_DIR/.initialized" 2>/dev/null
-rm -f "$WORK_DIR/.env" 2>/dev/null
-echo "[OK] 已清理旧的安装标记和配置"
-
-# 下载项目文件
-if [ -f "$WORK_DIR/ops-server" ] || [ -f "$WORK_DIR/index.html" ]; then
-    echo ">> 检测到已有文件，使用 git pull 更新..."
-    if [ -d "$WORK_DIR/.git" ]; then
-        cd "$WORK_DIR" && git pull origin main 2>&1
-    else
-        echo ">> 非 git 仓库，重新克隆..."
-        # 备份 uploads
-        [ -d "$WORK_DIR/uploads" ] && cp -r "$WORK_DIR/uploads" /tmp/ops-uploads-backup 2>/dev/null
-        cd /tmp && rm -rf ops-clone && git clone https://github.com/Mcloud136/admin.git ops-clone 2>&1
-        # 覆盖除 uploads 外的所有文件
-        rsync -a --exclude='uploads' /tmp/ops-clone/ "$WORK_DIR/" 2>/dev/null || cp -r /tmp/ops-clone/* "$WORK_DIR/"
-        rm -rf /tmp/ops-clone
-        # 恢复 uploads
-        [ -d /tmp/ops-uploads-backup ] && cp -r /tmp/ops-uploads-backup/* "$WORK_DIR/uploads/" 2>/dev/null
-        rm -rf /tmp/ops-uploads-backup
-    fi
-else
-    echo ">> git clone https://github.com/Mcloud136/admin.git ./"
-    git clone https://github.com/Mcloud136/admin.git ./ 2>&1
-fi
+echo ">> git clone https://github.com/Mcloud136/admin.git ./"
+git clone https://github.com/Mcloud136/admin.git ./
 echo "[OK] 项目文件下载完成"
 
 # ============================================
