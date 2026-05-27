@@ -1,21 +1,25 @@
 #!/bin/bash
 set -e
 
-WORK_DIR=$(pwd)
+# ============================================
+# 运维管理平台 - 一键安装脚本
+# ============================================
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR="/opt/ops-platform"
+SOURCE="github"
 
 echo "=========================================="
 echo "  运维管理平台 - 一键安装脚本"
 echo "=========================================="
 echo ""
 
-# Check root
 if [ "$(id -u)" -ne 0 ]; then
     echo "[ERROR] 请使用 root 权限运行: sudo bash install.sh"
     exit 1
 fi
 echo "[OK] root 权限确认"
 
-# Detect OS
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$ID
@@ -31,140 +35,102 @@ echo "[1/7] 安装系统依赖..."
 echo "-------------------------------------------"
 
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-    echo ">> apt-get update"
-    apt-get update
-    echo ""
-    echo ">> apt-get install nginx postgresql postgresql-client"
+    apt-get update -qq
     apt-get install -y nginx postgresql postgresql-client
-    echo ""
-    echo ">> 设置 postgres 用户密码"
     sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
-elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "rocky" ]; then
-    echo ">> yum install nginx postgresql-server postgresql"
+elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; then
     yum install -y nginx postgresql-server postgresql
-    echo ""
-    echo ">> 初始化 PostgreSQL"
     postgresql-setup --initdb || true
-    echo ">> 启动 PostgreSQL"
-    systemctl enable postgresql
-    systemctl start postgresql
-    echo ""
-    echo ">> 设置 postgres 用户密码"
+    systemctl enable postgresql && systemctl start postgresql
     sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
-else
-    echo "[WARN] 未知系统，请手动安装 Nginx 和 PostgreSQL"
 fi
 echo "[OK] 系统依赖安装完成"
 
 # ============================================
 echo ""
-echo "[2/7] 下载项目文件..."
+echo "[2/7] 部署项目文件..."
 echo "-------------------------------------------"
 
-echo ">> git clone https://github.com/Mcloud136/admin.git ./"
-git clone https://github.com/Mcloud136/admin.git ./
-echo "[OK] 项目文件下载完成"
+mkdir -p "$INSTALL_DIR"
+cp "$SCRIPT_DIR/ops-server" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/ops-supervisor" "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR/assets" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/index.html" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/.env.example" "$INSTALL_DIR/.env.example"
+chmod +x "$INSTALL_DIR/ops-server" "$INSTALL_DIR/ops-supervisor"
+mkdir -p "$INSTALL_DIR/uploads/branding" "$INSTALL_DIR/uploads/kb"
+
+# 写入来源标记
+echo "$SOURCE" > "$INSTALL_DIR/.source"
+echo "[OK] 项目文件部署完成（来源: $SOURCE）"
 
 # ============================================
 echo ""
-echo "[3/7] 设置文件权限..."
+echo "[3/7] 创建数据库..."
 echo "-------------------------------------------"
 
-echo ">> chmod +x ops-server"
-chmod +x "$WORK_DIR/ops-server"
-echo ">> chmod +x ops-supervisor"
-chmod +x "$WORK_DIR/ops-supervisor"
-echo ">> 创建 uploads/ 目录"
-mkdir -p "$WORK_DIR/uploads/branding"
-mkdir -p "$WORK_DIR/uploads/kb"
-echo "[OK] 权限设置完成"
-
-# ============================================
-echo ""
-echo "[4/7] 创建数据库..."
-echo "-------------------------------------------"
-
-echo ">> 确保 PostgreSQL 运行"
 systemctl start postgresql || true
 sleep 2
-
-echo ">> CREATE DATABASE ops_platform"
-sudo -u postgres psql -c "CREATE DATABASE ops_platform;" || echo "   数据库已存在，跳过"
+sudo -u postgres psql -c "CREATE DATABASE ops_platform ENCODING 'UTF8';" 2>/dev/null || echo "   数据库已存在，跳过"
 echo "[OK] 数据库准备完成"
 
 # ============================================
 echo ""
-echo "[5/7] 配置 Nginx..."
+echo "[4/7] 配置 Nginx..."
 echo "-------------------------------------------"
 
 SERVER_IP=$(hostname -I | awk '{print $1}')
-echo ">> 服务器 IP: $SERVER_IP"
 
-NGINX_CONF="/etc/nginx/sites-available/ops-platform"
-if [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "rocky" ]; then
+if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+    NGINX_CONF="/etc/nginx/sites-available/ops-platform"
+else
     NGINX_CONF="/etc/nginx/conf.d/ops-platform.conf"
 fi
 
-echo ">> 写入 Nginx 配置: $NGINX_CONF"
-cat > "$NGINX_CONF" << NGINXEOF
+cat > "$NGINX_CONF" << 'NGINXEOF'
 server {
     listen 80;
     server_name _;
-
-    root $WORK_DIR;
+    root INSTALL_DIR_PLACEHOLDER;
     index index.html;
-
     client_max_body_size 50m;
 
     location /api/ {
         proxy_pass http://127.0.0.1:8080/api/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_read_timeout 300s;
     }
-
     location /uploads/ {
         proxy_pass http://127.0.0.1:8080/uploads/;
     }
-
-    location /swagger/ {
-        proxy_pass http://127.0.0.1:8080/swagger/;
-    }
-
     location / {
-        try_files \$uri \$uri/ /index.html;
+        try_files $uri $uri/ /index.html;
     }
-
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
         expires 30d;
         add_header Cache-Control "public, immutable";
     }
-
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml;
     gzip_min_length 1024;
 }
 NGINXEOF
+sed -i "s|INSTALL_DIR_PLACEHOLDER|$INSTALL_DIR|g" "$NGINX_CONF"
 
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-    echo ">> 创建 sites-enabled 软链接"
     ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/ops-platform
     rm -f /etc/nginx/sites-enabled/default
 fi
-
-echo ">> 测试 Nginx 配置"
-nginx -t
-echo ">> 重载 Nginx"
-systemctl reload nginx || systemctl restart nginx
+nginx -t && (systemctl reload nginx || systemctl restart nginx)
 echo "[OK] Nginx 配置完成"
 
 # ============================================
 echo ""
-echo "[6/7] 配置系统服务..."
+echo "[5/7] 配置系统服务..."
 echo "-------------------------------------------"
 
-echo ">> 写入 systemd 服务文件"
 cat > /etc/systemd/system/ops-platform.service << SVCEOF
 [Unit]
 Description=Ops Platform Supervisor
@@ -173,8 +139,8 @@ After=network.target postgresql.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=$WORK_DIR
-ExecStart=$WORK_DIR/ops-supervisor
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/ops-supervisor
 Restart=always
 RestartSec=5
 
@@ -182,17 +148,21 @@ RestartSec=5
 WantedBy=multi-user.target
 SVCEOF
 
-echo ">> systemctl daemon-reload"
 systemctl daemon-reload
-echo ">> systemctl enable ops-platform"
 systemctl enable ops-platform
-echo ">> systemctl start ops-platform"
 systemctl start ops-platform
-echo ">> 等待服务启动..."
 sleep 3
-echo ">> 检查服务状态"
 systemctl status ops-platform --no-pager || true
 echo "[OK] 系统服务配置完成"
+
+# ============================================
+echo ""
+echo "[6/7] 复制更新脚本..."
+echo "-------------------------------------------"
+cp "$SCRIPT_DIR/update.sh" "$INSTALL_DIR/" 2>/dev/null || true
+cp "$SCRIPT_DIR/update-cn.sh" "$INSTALL_DIR/" 2>/dev/null || true
+chmod +x "$INSTALL_DIR/update.sh" "$INSTALL_DIR/update-cn.sh" 2>/dev/null || true
+echo "[OK] 更新脚本已部署"
 
 # ============================================
 echo ""
@@ -201,17 +171,17 @@ echo "=========================================="
 echo ""
 echo "  访问地址: http://${SERVER_IP}"
 echo ""
-echo "  首次访问将进入安装向导，请按提示完成："
+echo "  首次访问将进入安装向导:"
 echo "    1. 数据库信息（默认 postgres 用户）"
 echo "    2. 管理员账号密码"
 echo "    3. 平台名称和公司名称"
 echo ""
-echo "  API 文档: http://${SERVER_IP}/swagger/index.html"
+echo "  更新命令: cd $INSTALL_DIR && sudo bash update.sh"
 echo ""
-echo "  服务管理命令:"
+echo "  服务管理:"
 echo "    systemctl start ops-platform    # 启动"
 echo "    systemctl stop ops-platform     # 停止"
 echo "    systemctl restart ops-platform  # 重启"
 echo "    systemctl status ops-platform   # 状态"
-echo "    journalctl -u ops-platform -f   # 实时日志"
+echo "    journalctl -u ops-platform -f   # 日志"
 echo ""
