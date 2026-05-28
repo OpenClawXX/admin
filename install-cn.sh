@@ -141,6 +141,14 @@ PGHBA
         echo "       确保认证方式为 md5 而非 peer/scram-sha-256"
     fi
 
+    # 强制 md5 密码加密（兼容 Go 驱动）
+    if [ -n "$PG_CONF_DIR" ] && [ -f "$PG_CONF_DIR/postgresql.conf" ]; then
+        echo "password_encryption = md5" >> "$PG_CONF_DIR/postgresql.conf"
+        systemctl restart postgresql 2>/dev/null || true
+        sleep 2
+        echo "[OK] 已设置 password_encryption = md5"
+    fi
+
     echo ">> 设置 postgres 用户密码"
     sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
 
