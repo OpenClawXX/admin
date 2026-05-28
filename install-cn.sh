@@ -163,15 +163,30 @@ echo ""
 echo "[3/8] 下载项目文件 (Gitee)..."
 echo "-------------------------------------------"
 
-echo ">> git clone https://gitee.com/wxbns/Team-Management.git ./"
-git clone https://gitee.com/wxbns/Team-Management.git ./
+echo ">> 下载项目文件..."
+systemctl stop ops-platform 2>/dev/null || true
+
+DIR_EMPTY=true
+[ "$(ls -A "$WORK_DIR" 2>/dev/null)" ] && DIR_EMPTY=false
+
+if [ "$DIR_EMPTY" = false ]; then
+    echo ">> 检测到目录非空，重新下载..."
+    [ -d "$WORK_DIR/uploads" ] && cp -r "$WORK_DIR/uploads" /tmp/ops-uploads-backup 2>/dev/null
+    cd /tmp && rm -rf ops-clone
+    git clone https://gitee.com/wxbns/Team-Management.git ops-clone 2>&1
+    cp -r /tmp/ops-clone/* "$WORK_DIR/" 2>/dev/null
+    cp -r /tmp/ops-clone/.* "$WORK_DIR/" 2>/dev/null || true
+    rm -rf /tmp/ops-clone
+    [ -d /tmp/ops-uploads-backup ] && { mkdir -p "$WORK_DIR/uploads"; cp -r /tmp/ops-uploads-backup/* "$WORK_DIR/uploads/" 2>/dev/null; rm -rf /tmp/ops-uploads-backup; }
+    cd "$WORK_DIR"
+else
+    git clone https://gitee.com/wxbns/Team-Management.git ./ 2>&1
+fi
 echo "[OK] 项目文件下载完成"
 
-# 清理可能随 git clone 下载的残留文件
+# 清理残留 + 创建 .env
 rm -f "$WORK_DIR/.initialized" 2>/dev/null
 rm -f "$WORK_DIR/.env" 2>/dev/null
-
-# 从模板创建 .env 配置文件
 if [ -f "$WORK_DIR/.env.example" ] && [ ! -f "$WORK_DIR/.env" ]; then
     cp "$WORK_DIR/.env.example" "$WORK_DIR/.env"
     echo "[OK] 已从模板创建 .env 配置文件"
