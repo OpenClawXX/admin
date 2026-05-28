@@ -131,18 +131,31 @@ echo "[4/7] 清理数据库（可选）..."
 echo "-------------------------------------------"
 
 if command -v psql &> /dev/null; then
-    # Check if ops_platform database exists
-    DB_EXISTS=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='ops_platform'" 2>/dev/null)
-    if [ "$DB_EXISTS" = "1" ]; then
-        read -p "  是否删除 ops_platform 数据库？所有数据将丢失！(y/N): " DB_CONFIRM < /dev/tty
+    # List all user databases
+    DB_LIST=$(sudo -u postgres psql -tAc "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null)
+    if [ -n "$DB_LIST" ]; then
+        echo "  发现以下数据库："
+        echo "$DB_LIST" | while read db; do echo "    - $db"; done
+        echo ""
+        read -p "  ⚠ 是否卸载 PostgreSQL 并删除所有数据库？(y/N): " DB_CONFIRM < /dev/tty
         if [ "$DB_CONFIRM" = "y" ] || [ "$DB_CONFIRM" = "Y" ]; then
-            sudo -u postgres psql -c "DROP DATABASE IF EXISTS ops_platform;" 2>/dev/null
-            echo "[OK] 数据库已删除"
+            systemctl stop postgresql 2>/dev/null || true
+
+            if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+                apt-get remove -y --purge postgresql postgresql-client postgresql-common 2>/dev/null
+                apt-get autoremove -y 2>/dev/null
+                rm -rf /var/lib/postgresql 2>/dev/null
+                rm -rf /etc/postgresql 2>/dev/null
+            elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; then
+                yum remove -y postgresql-server postgresql 2>/dev/null
+                rm -rf /var/lib/pgsql 2>/dev/null
+            fi
+            echo "[OK] PostgreSQL 已卸载，所有数据库已删除"
         else
-            echo "[INFO] 保留数据库"
+            echo "[INFO] 保留 PostgreSQL 和数据库"
         fi
     else
-        echo "[INFO] ops_platform 数据库不存在"
+        echo "[INFO] 没有用户数据库"
     fi
 else
     echo "[INFO] psql 未找到，跳过数据库清理"
