@@ -69,6 +69,9 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
         cp "$PG_CONF_DIR/pg_hba.conf" "$PG_CONF_DIR/pg_hba.conf.bak" 2>/dev/null || true
         cat > "$PG_CONF_DIR/pg_hba.conf" << 'PGHBA'
 # PostgreSQL Client Authentication Configuration
+# postgres 用户保持 peer 认证（脚本需要 sudo -u postgres 操作）
+# 其他用户和远程连接使用 md5 密码认证
+local   all             postgres                                peer
 local   all             all                                     md5
 host    all             all             127.0.0.1/32            md5
 host    all             all             ::1/128                 md5
@@ -104,7 +107,7 @@ elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "rocky" ]; then
     systemctl start postgresql
     echo ""
     echo ">> 设置 postgres 用户密码"
-    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败"
 else
     echo "[WARN] 未知系统，请手动安装 Nginx 和 PostgreSQL"
 fi
@@ -115,8 +118,24 @@ echo ""
 echo "[2/7] 下载项目文件..."
 echo "-------------------------------------------"
 
-echo ">> git clone https://github.com/Mcloud136/admin.git ./"
-git clone https://github.com/Mcloud136/admin.git ./
+echo ">> 下载项目文件..."
+systemctl stop ops-platform 2>/dev/null || true
+rm -f "$WORK_DIR/.initialized" 2>/dev/null
+rm -f "$WORK_DIR/.env" 2>/dev/null
+
+if [ -f "$WORK_DIR/ops-server" ] || [ -f "$WORK_DIR/index.html" ]; then
+    echo ">> 检测到已有文件，重新下载..."
+    [ -d "$WORK_DIR/uploads" ] && cp -r "$WORK_DIR/uploads" /tmp/ops-uploads-backup 2>/dev/null
+    cd /tmp && rm -rf ops-clone
+    git clone https://github.com/Mcloud136/admin.git ops-clone 2>&1
+    cp -r /tmp/ops-clone/* "$WORK_DIR/" 2>/dev/null
+    cp -r /tmp/ops-clone/.* "$WORK_DIR/" 2>/dev/null || true
+    rm -rf /tmp/ops-clone
+    [ -d /tmp/ops-uploads-backup ] && { mkdir -p "$WORK_DIR/uploads"; cp -r /tmp/ops-uploads-backup/* "$WORK_DIR/uploads/" 2>/dev/null; rm -rf /tmp/ops-uploads-backup; }
+    cd "$WORK_DIR"
+else
+    git clone https://github.com/Mcloud136/admin.git ./ 2>&1
+fi
 echo "[OK] 项目文件下载完成"
 
 # ============================================
