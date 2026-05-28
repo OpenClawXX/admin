@@ -78,50 +78,70 @@ echo "-------------------------------------------"
 
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     echo ">> apt-get update"
-    apt-get update
+    apt-get update || true
     echo ""
     echo ">> apt-get install nginx postgresql postgresql-client"
     apt-get install -y nginx postgresql postgresql-client
     echo ""
 
     # 配置 PostgreSQL 允许密码认证
-    PG_CONF_DIR=$(find /etc/postgresql -maxdepth 2 -name "pg_hba.conf" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+    # 查找 pg_hba.conf 的位置（兼容不同 PostgreSQL 版本）
+    PG_CONF_DIR=""
+    for try_dir in \
+        /etc/postgresql/*/main \
+        /etc/postgresql/*/18/main \
+        /etc/postgresql/*/16/main \
+        /etc/postgresql/*/15/main \
+        /etc/postgresql/*/14/main; do
+        if [ -f "$try_dir/pg_hba.conf" ]; then
+            PG_CONF_DIR="$try_dir"
+            break
+        fi
+    done
+
+    # 如果找不到，用 pg_config 推断
     if [ -z "$PG_CONF_DIR" ]; then
-        PG_VERSION=$(pg_config --version 2>/dev/null | grep -o '[0-9]*' | head -1)
-        PG_CONF_DIR="/etc/postgresql/${PG_VERSION}/main"
+        PG_VER=$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || echo "")
+        if [ -n "$PG_VER" ]; then
+            PG_CONF_DIR="/etc/postgresql/${PG_VER}/main"
+        fi
     fi
 
-    echo ">> 配置 PostgreSQL 密码认证 (目录: $PG_CONF_DIR)"
+    echo ">> PostgreSQL 配置目录: ${PG_CONF_DIR:-未找到}"
 
-    if [ -d "$PG_CONF_DIR" ]; then
+    if [ -n "$PG_CONF_DIR" ] && [ -d "$PG_CONF_DIR" ]; then
+        # 备份并重写 pg_hba.conf
         cp "$PG_CONF_DIR/pg_hba.conf" "$PG_CONF_DIR/pg_hba.conf.bak" 2>/dev/null || true
         cat > "$PG_CONF_DIR/pg_hba.conf" << 'PGHBA'
 # PostgreSQL Client Authentication Configuration
-# TYPE  DATABASE        USER            ADDRESS                 METHOD
 local   all             all                                     md5
 host    all             all             127.0.0.1/32            md5
 host    all             all             ::1/128                 md5
 host    all             all             0.0.0.0/0               md5
 PGHBA
         echo "[OK] pg_hba.conf 已配置（密码认证）"
-    fi
 
-    if [ -f "$PG_CONF_DIR/postgresql.conf" ]; then
-        if grep -q "^#listen_addresses" "$PG_CONF_DIR/postgresql.conf" 2>/dev/null; then
-            sed -i "s/^#listen_addresses.*/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
-        elif grep -q "^listen_addresses" "$PG_CONF_DIR/postgresql.conf" 2>/dev/null; then
-            sed -i "s/^listen_addresses.*/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
-        else
-            echo "listen_addresses = '*'" >> "$PG_CONF_DIR/postgresql.conf"
+        # 配置监听地址
+        if [ -f "$PG_CONF_DIR/postgresql.conf" ]; then
+            if grep -q "^#listen_addresses" "$PG_CONF_DIR/postgresql.conf" 2>/dev/null; then
+                sed -i "s/^#listen_addresses.*/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
+            elif grep -q "^listen_addresses" "$PG_CONF_DIR/postgresql.conf" 2>/dev/null; then
+                sed -i "s/^listen_addresses.*/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
+            else
+                echo "listen_addresses = '*'" >> "$PG_CONF_DIR/postgresql.conf"
+            fi
+            echo "[OK] listen_addresses 已配置"
         fi
-        echo "[OK] listen_addresses 已配置"
-    fi
 
-    systemctl restart postgresql
-    sleep 2
+        systemctl restart postgresql 2>/dev/null || true
+        sleep 2
+    else
+        echo "[WARN] 未找到 PostgreSQL 配置目录，请手动配置 pg_hba.conf"
+        echo "       确保认证方式为 md5 而非 peer/scram-sha-256"
+    fi
 
     echo ">> 设置 postgres 用户密码"
-    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
 
 elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; then
     echo ">> yum install nginx postgresql-server postgresql"
