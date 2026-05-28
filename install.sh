@@ -38,7 +38,11 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     apt-get install -y nginx postgresql postgresql-client
     echo ""
 
-    # 配置 PostgreSQL 允许密码认证
+    # 先用 peer 认证设置 postgres 密码（此时 pg_hba.conf 还是默认的 peer）
+    echo ">> 设置 postgres 用户密码"
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
+
+    # 再修改 pg_hba.conf 为 md5 认证
     PG_CONF_DIR=""
     for try_dir in \
         /etc/postgresql/*/main \
@@ -87,11 +91,7 @@ PGHBA
         sleep 2
     else
         echo "[WARN] 未找到 PostgreSQL 配置目录，请手动配置 pg_hba.conf"
-        echo "       确保认证方式为 md5 而非 peer/scram-sha-256"
     fi
-
-    echo ">> 设置 postgres 用户密码"
-    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
 
 elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "rocky" ]; then
     echo ">> yum install nginx postgresql-server postgresql"

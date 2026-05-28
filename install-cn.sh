@@ -84,8 +84,11 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     apt-get install -y nginx postgresql postgresql-client
     echo ""
 
-    # 配置 PostgreSQL 允许密码认证
-    # 查找 pg_hba.conf 的位置（兼容不同 PostgreSQL 版本）
+    # 先用 peer 认证设置 postgres 密码（此时 pg_hba.conf 还是默认的 peer）
+    echo ">> 设置 postgres 用户密码"
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
+
+    # 再修改 pg_hba.conf 为 md5 认证
     PG_CONF_DIR=""
     for try_dir in \
         /etc/postgresql/*/main \
@@ -99,7 +102,6 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
         fi
     done
 
-    # 如果找不到，用 pg_config 推断
     if [ -z "$PG_CONF_DIR" ]; then
         PG_VER=$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || echo "")
         if [ -n "$PG_VER" ]; then
@@ -110,7 +112,6 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     echo ">> PostgreSQL 配置目录: ${PG_CONF_DIR:-未找到}"
 
     if [ -n "$PG_CONF_DIR" ] && [ -d "$PG_CONF_DIR" ]; then
-        # 备份并重写 pg_hba.conf
         cp "$PG_CONF_DIR/pg_hba.conf" "$PG_CONF_DIR/pg_hba.conf.bak" 2>/dev/null || true
         cat > "$PG_CONF_DIR/pg_hba.conf" << 'PGHBA'
 # PostgreSQL Client Authentication Configuration
@@ -121,7 +122,6 @@ host    all             all             0.0.0.0/0               md5
 PGHBA
         echo "[OK] pg_hba.conf 已配置（密码认证）"
 
-        # 配置监听地址
         if [ -f "$PG_CONF_DIR/postgresql.conf" ]; then
             if grep -q "^#listen_addresses" "$PG_CONF_DIR/postgresql.conf" 2>/dev/null; then
                 sed -i "s/^#listen_addresses.*/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
@@ -137,11 +137,7 @@ PGHBA
         sleep 2
     else
         echo "[WARN] 未找到 PostgreSQL 配置目录，请手动配置 pg_hba.conf"
-        echo "       确保认证方式为 md5 而非 peer/scram-sha-256"
     fi
-
-    echo ">> 设置 postgres 用户密码"
-    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
 
 elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; then
     echo ">> yum install nginx postgresql-server postgresql"
