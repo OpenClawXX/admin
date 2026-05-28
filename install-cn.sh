@@ -84,11 +84,8 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     apt-get install -y nginx postgresql postgresql-client
     echo ""
 
-    # 先用 peer 认证设置 postgres 密码（此时 pg_hba.conf 还是默认的 peer）
-    echo ">> 设置 postgres 用户密码"
-    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
-
-    # 再修改 pg_hba.conf 为 md5 认证
+    # 配置 PostgreSQL 允许密码认证
+    # 查找 pg_hba.conf 的位置（兼容不同 PostgreSQL 版本）
     PG_CONF_DIR=""
     for try_dir in \
         /etc/postgresql/*/main \
@@ -102,6 +99,7 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
         fi
     done
 
+    # 如果找不到，用 pg_config 推断
     if [ -z "$PG_CONF_DIR" ]; then
         PG_VER=$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || echo "")
         if [ -n "$PG_VER" ]; then
@@ -112,11 +110,10 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     echo ">> PostgreSQL 配置目录: ${PG_CONF_DIR:-未找到}"
 
     if [ -n "$PG_CONF_DIR" ] && [ -d "$PG_CONF_DIR" ]; then
+        # 备份并重写 pg_hba.conf
         cp "$PG_CONF_DIR/pg_hba.conf" "$PG_CONF_DIR/pg_hba.conf.bak" 2>/dev/null || true
         cat > "$PG_CONF_DIR/pg_hba.conf" << 'PGHBA'
 # PostgreSQL Client Authentication Configuration
-# postgres 用户保持 peer 认证（脚本需要 sudo -u postgres 操作）
-# 其他用户和远程连接使用 md5 密码认证
 local   all             postgres                                peer
 local   all             all                                     md5
 host    all             all             127.0.0.1/32            md5
@@ -125,6 +122,7 @@ host    all             all             0.0.0.0/0               md5
 PGHBA
         echo "[OK] pg_hba.conf 已配置（密码认证）"
 
+        # 配置监听地址
         if [ -f "$PG_CONF_DIR/postgresql.conf" ]; then
             if grep -q "^#listen_addresses" "$PG_CONF_DIR/postgresql.conf" 2>/dev/null; then
                 sed -i "s/^#listen_addresses.*/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
@@ -140,7 +138,11 @@ PGHBA
         sleep 2
     else
         echo "[WARN] 未找到 PostgreSQL 配置目录，请手动配置 pg_hba.conf"
+        echo "       确保认证方式为 md5 而非 peer/scram-sha-256"
     fi
+
+    echo ">> 设置 postgres 用户密码"
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
 
 elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; then
     echo ">> yum install nginx postgresql-server postgresql"
@@ -153,7 +155,7 @@ elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; the
     systemctl start postgresql
     echo ""
     echo ">> 设置 postgres 用户密码"
-    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败"
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
 fi
 
 # ============================================
@@ -161,31 +163,19 @@ echo ""
 echo "[3/8] 下载项目文件 (Gitee)..."
 echo "-------------------------------------------"
 
-echo ">> 下载项目文件..."
-# 停止旧服务（重装场景）
-systemctl stop ops-platform 2>/dev/null || true
-# 清理旧安装标记
+echo ">> git clone https://gitee.com/wxbns/Team-Management.git ./"
+git clone https://gitee.com/wxbns/Team-Management.git ./
+echo "[OK] 项目文件下载完成"
+
+# 清理可能随 git clone 下载的残留文件
 rm -f "$WORK_DIR/.initialized" 2>/dev/null
 rm -f "$WORK_DIR/.env" 2>/dev/null
 
-# 检测目录是否非空（任何已有文件都走重装逻辑）
-DIR_EMPTY=true
-[ "$(ls -A "$WORK_DIR" 2>/dev/null)" ] && DIR_EMPTY=false
-
-if [ "$DIR_EMPTY" = false ]; then
-    echo ">> 检测到已有文件，重新下载..."
-    [ -d "$WORK_DIR/uploads" ] && cp -r "$WORK_DIR/uploads" /tmp/ops-uploads-backup 2>/dev/null
-    cd /tmp && rm -rf ops-clone
-    git clone https://gitee.com/wxbns/Team-Management.git ops-clone 2>&1
-    cp -r /tmp/ops-clone/* "$WORK_DIR/" 2>/dev/null
-    cp -r /tmp/ops-clone/.* "$WORK_DIR/" 2>/dev/null || true
-    rm -rf /tmp/ops-clone
-    [ -d /tmp/ops-uploads-backup ] && { mkdir -p "$WORK_DIR/uploads"; cp -r /tmp/ops-uploads-backup/* "$WORK_DIR/uploads/" 2>/dev/null; rm -rf /tmp/ops-uploads-backup; }
-    cd "$WORK_DIR"
-else
-    git clone https://gitee.com/wxbns/Team-Management.git ./ 2>&1
+# 从模板创建 .env 配置文件
+if [ -f "$WORK_DIR/.env.example" ] && [ ! -f "$WORK_DIR/.env" ]; then
+    cp "$WORK_DIR/.env.example" "$WORK_DIR/.env"
+    echo "[OK] 已从模板创建 .env 配置文件"
 fi
-echo "[OK] 项目文件下载完成"
 
 # ============================================
 echo ""
