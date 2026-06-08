@@ -29,6 +29,15 @@ else
     exit 1
 fi
 
+# 生成随机数据库密码
+DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
+echo "[OK] 已生成随机数据库密码"
+
+# 保存密码到临时文件供安装向导读取
+echo "$DB_PASSWORD" > .db_password
+chmod 600 .db_password
+echo "[OK] 密码已保存到 .db_password"
+
 # ============================================
 echo ""
 echo "[1/8] 配置国内镜像源..."
@@ -78,72 +87,13 @@ echo "-------------------------------------------"
 
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     echo ">> apt-get update"
-    apt-get update || true
+    apt-get update
     echo ""
     echo ">> apt-get install nginx postgresql postgresql-client"
     apt-get install -y nginx postgresql postgresql-client
     echo ""
-
-    # 配置 PostgreSQL 允许密码认证
-    # 查找 pg_hba.conf 的位置（兼容不同 PostgreSQL 版本）
-    PG_CONF_DIR=""
-    for try_dir in \
-        /etc/postgresql/*/main \
-        /etc/postgresql/*/18/main \
-        /etc/postgresql/*/16/main \
-        /etc/postgresql/*/15/main \
-        /etc/postgresql/*/14/main; do
-        if [ -f "$try_dir/pg_hba.conf" ]; then
-            PG_CONF_DIR="$try_dir"
-            break
-        fi
-    done
-
-    # 如果找不到，用 pg_config 推断
-    if [ -z "$PG_CONF_DIR" ]; then
-        PG_VER=$(pg_config --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || echo "")
-        if [ -n "$PG_VER" ]; then
-            PG_CONF_DIR="/etc/postgresql/${PG_VER}/main"
-        fi
-    fi
-
-    echo ">> PostgreSQL 配置目录: ${PG_CONF_DIR:-未找到}"
-
-    if [ -n "$PG_CONF_DIR" ] && [ -d "$PG_CONF_DIR" ]; then
-        # 备份并重写 pg_hba.conf
-        cp "$PG_CONF_DIR/pg_hba.conf" "$PG_CONF_DIR/pg_hba.conf.bak" 2>/dev/null || true
-        cat > "$PG_CONF_DIR/pg_hba.conf" << 'PGHBA'
-# PostgreSQL Client Authentication Configuration
-local   all             postgres                                peer
-local   all             all                                     md5
-host    all             all             127.0.0.1/32            md5
-host    all             all             ::1/128                 md5
-host    all             all             0.0.0.0/0               md5
-PGHBA
-        echo "[OK] pg_hba.conf 已配置（密码认证）"
-
-        # 配置监听地址
-        if [ -f "$PG_CONF_DIR/postgresql.conf" ]; then
-            if grep -q "^#listen_addresses" "$PG_CONF_DIR/postgresql.conf" 2>/dev/null; then
-                sed -i "s/^#listen_addresses.*/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
-            elif grep -q "^listen_addresses" "$PG_CONF_DIR/postgresql.conf" 2>/dev/null; then
-                sed -i "s/^listen_addresses.*/listen_addresses = '*'/" "$PG_CONF_DIR/postgresql.conf"
-            else
-                echo "listen_addresses = '*'" >> "$PG_CONF_DIR/postgresql.conf"
-            fi
-            echo "[OK] listen_addresses 已配置"
-        fi
-
-        systemctl restart postgresql 2>/dev/null || true
-        sleep 2
-    else
-        echo "[WARN] 未找到 PostgreSQL 配置目录，请手动配置 pg_hba.conf"
-        echo "       确保认证方式为 md5 而非 peer/scram-sha-256"
-    fi
-
     echo ">> 设置 postgres 用户密码"
-    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" 2>/dev/null || echo "[WARN] 设置密码失败（可能已设置）"
-
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD '${DB_PASSWORD}';"
 elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; then
     echo ">> yum install nginx postgresql-server postgresql"
     yum install -y nginx postgresql-server postgresql
@@ -155,7 +105,7 @@ elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; the
     systemctl start postgresql
     echo ""
     echo ">> 设置 postgres 用户密码"
-    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD '${DB_PASSWORD}';"
 fi
 
 # ============================================
@@ -166,16 +116,6 @@ echo "-------------------------------------------"
 echo ">> git clone https://gitee.com/wxbns/Team-Management.git ./"
 git clone https://gitee.com/wxbns/Team-Management.git ./
 echo "[OK] 项目文件下载完成"
-
-# 清理可能随 git clone 下载的残留文件
-rm -f "$WORK_DIR/.initialized" 2>/dev/null
-rm -f "$WORK_DIR/.env" 2>/dev/null
-
-# 从模板创建 .env 配置文件
-if [ -f "$WORK_DIR/.env.example" ] && [ ! -f "$WORK_DIR/.env" ]; then
-    cp "$WORK_DIR/.env.example" "$WORK_DIR/.env"
-    echo "[OK] 已从模板创建 .env 配置文件"
-fi
 
 # ============================================
 echo ""
@@ -229,20 +169,22 @@ server {
 
     client_max_body_size 50m;
 
+    # Security headers
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
     location /api/ {
-        proxy_pass http://127.0.0.1:1365/api/;
+        proxy_pass http://127.0.0.1:8080/api/;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_read_timeout 300s;
     }
 
-    location /uploads/ {
-        proxy_pass http://127.0.0.1:1365/uploads/;
-    }
-
     location /swagger/ {
-        proxy_pass http://127.0.0.1:1365/swagger/;
+        proxy_pass http://127.0.0.1:8080/swagger/;
     }
 
     location / {
@@ -277,6 +219,14 @@ echo ""
 echo "[7/8] 配置系统服务..."
 echo "-------------------------------------------"
 
+echo ">> 创建 ops-platform 系统用户"
+if ! id "ops-platform" &>/dev/null; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin ops-platform
+    echo "[OK] 用户 ops-platform 已创建"
+else
+    echo "[OK] 用户 ops-platform 已存在"
+fi
+
 echo ">> 写入 systemd 服务: /etc/systemd/system/ops-platform.service"
 cat > /etc/systemd/system/ops-platform.service << SVCEOF
 [Unit]
@@ -285,7 +235,7 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-User=root
+User=ops-platform
 WorkingDirectory=$WORK_DIR
 ExecStart=$WORK_DIR/ops-supervisor
 Restart=always
@@ -297,6 +247,8 @@ SVCEOF
 
 echo ">> systemctl daemon-reload"
 systemctl daemon-reload
+echo ">> 设置文件权限"
+chown -R ops-platform:ops-platform "$WORK_DIR"
 echo ">> systemctl enable ops-platform"
 systemctl enable ops-platform
 echo ">> systemctl start ops-platform"
@@ -318,6 +270,10 @@ echo "  首次访问将进入安装向导，请按提示完成："
 echo "    1. 数据库信息（默认 postgres 用户）"
 echo "    2. 管理员账号密码"
 echo "    3. 平台名称和公司名称"
+echo ""
+echo "  [NOTE] 数据库密码已保存，安装向导将使用以下密码:"
+echo "  [NOTE] 数据库密码已保存到 .db_password，请查看该文件获取密码"
+echo "  [NOTE] .db_password will be automatically deleted after setup wizard completes"
 echo ""
 echo "  API 文档: http://${SERVER_IP}/swagger/index.html"
 echo ""
