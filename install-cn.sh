@@ -255,8 +255,10 @@ echo ">> 设置文件权限"
 chown -R ops-platform:ops-platform "$WORK_DIR"
 # Allow Nginx (www-data) to read static files
 usermod -a -G ops-platform www-data
-chmod 750 "$WORK_DIR"
-find "$WORK_DIR" -type f -name "*.html" -o -name "*.css" -o -name "*.js" -o -name "*.svg" -o -name "*.png" -o -name "*.jpg" | xargs chmod 640 2>/dev/null || true
+# Directories need execute permission for traversal
+find "$WORK_DIR" -type d -exec chmod 750 {} +
+# Static files readable by group
+find "$WORK_DIR" -type f \( -name "*.html" -o -name "*.css" -o -name "*.js" -o -name "*.svg" -o -name "*.png" -o -name "*.jpg" -o -name "*.json" \) -exec chmod 640 {} +
 chmod 750 "$WORK_DIR/ops-server" "$WORK_DIR/ops-supervisor"
 echo ">> systemctl enable ops-platform"
 systemctl enable ops-platform
