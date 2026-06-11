@@ -119,8 +119,11 @@ echo ""
 echo "[3/9] 下载项目文件 (Gitee)..."
 echo "-------------------------------------------"
 
-echo ">> git clone https://gitee.com/wxbns/Team-Management.git ./"
-git clone https://gitee.com/wxbns/Team-Management.git ./
+echo ">> git clone https://gitee.com/wxbns/Team-Management.git (temp)"
+TEMP_DIR=$(mktemp -d)
+git clone --depth 1 https://gitee.com/wxbns/Team-Management.git "$TEMP_DIR"
+cp -a "$TEMP_DIR"/. "$WORK_DIR/"
+rm -rf "$TEMP_DIR"
 echo "[OK] 项目文件下载完成"
 
 # ============================================
@@ -238,7 +241,8 @@ fi
 echo ">> 测试 Nginx 配置"
 nginx -t
 echo ">> 重载 Nginx"
-systemctl reload nginx || systemctl restart nginx
+echo ">> 重启 Nginx（确保新组权限生效）"
+systemctl restart nginx
 echo "[OK] Nginx 配置完成"
 
 # ============================================
@@ -276,6 +280,13 @@ echo ">> systemctl daemon-reload"
 systemctl daemon-reload
 echo ">> 设置文件权限"
 chown -R ops-platform:ops-platform "$WORK_DIR"
+# Allow Nginx (www-data) to read static files
+usermod -a -G ops-platform www-data
+# Directories need execute permission for traversal
+find "$WORK_DIR" -type d -exec chmod 750 {} +
+# Static files readable by group
+find "$WORK_DIR" -type f \( -name "*.html" -o -name "*.css" -o -name "*.js" -o -name "*.svg" -o -name "*.png" -o -name "*.jpg" -o -name "*.json" \) -exec chmod 640 {} +
+chmod 750 "$WORK_DIR/ops-server" "$WORK_DIR/ops-supervisor"
 echo ">> systemctl enable ops-platform"
 systemctl enable ops-platform
 echo ">> systemctl start ops-platform"
