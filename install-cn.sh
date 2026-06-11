@@ -141,6 +141,8 @@ chmod 600 .db_password
 echo "[OK] 密码已保存到 .db_password"
 
 echo ">> 确保 PostgreSQL 运行"
+# 创建集群（如果不存在）并启动
+pg_createcluster 12 main --start 2>/dev/null || true
 systemctl start postgresql || true
 sleep 2
 
