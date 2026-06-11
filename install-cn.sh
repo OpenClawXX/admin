@@ -283,10 +283,20 @@ chown -R ops-platform:ops-platform "$WORK_DIR"
 # Allow Nginx (www-data) to read static files
 usermod -a -G ops-platform www-data
 # Directories need execute permission for traversal
-find "$WORK_DIR" -type d -exec chmod 750 {} +
+chmod 750 "$WORK_DIR"
+chmod 750 "$WORK_DIR/assets" 2>/dev/null || true
+chmod 750 "$WORK_DIR/config" 2>/dev/null || true
+chmod 750 "$WORK_DIR/internal" 2>/dev/null || true
+chmod 750 "$WORK_DIR/uploads" 2>/dev/null || true
+chmod 750 "$WORK_DIR/uploads/branding" 2>/dev/null || true
+chmod 750 "$WORK_DIR/uploads/kb" 2>/dev/null || true
 # Static files readable by group
-find "$WORK_DIR" -type f \( -name "*.html" -o -name "*.css" -o -name "*.js" -o -name "*.svg" -o -name "*.png" -o -name "*.jpg" -o -name "*.json" \) -exec chmod 640 {} +
+chmod 640 "$WORK_DIR"/index.html 2>/dev/null || true
+chmod 640 "$WORK_DIR"/assets/*.js 2>/dev/null || true
+chmod 640 "$WORK_DIR"/assets/*.css 2>/dev/null || true
 chmod 750 "$WORK_DIR/ops-server" "$WORK_DIR/ops-supervisor"
+# Restart nginx (not reload) so workers pick up new group membership
+systemctl restart nginx 2>/dev/null || true
 echo ">> systemctl enable ops-platform"
 systemctl enable ops-platform
 echo ">> systemctl start ops-platform"
