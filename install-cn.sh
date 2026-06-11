@@ -113,8 +113,12 @@ echo ""
 echo "[3/8] 下载项目文件 (Gitee)..."
 echo "-------------------------------------------"
 
-echo ">> git clone https://gitee.com/wxbns/Team-Management.git ./"
-git clone https://gitee.com/wxbns/Team-Management.git ./
+echo ">> git clone https://gitee.com/wxbns/Team-Management.git (temp)"
+TEMP_DIR=$(mktemp -d)
+git clone --depth 1 https://gitee.com/wxbns/Team-Management.git "$TEMP_DIR"
+# Move all files (except install script) to working directory
+cp -a "$TEMP_DIR"/. "$WORK_DIR/"
+rm -rf "$TEMP_DIR"
 echo "[OK] 项目文件下载完成"
 
 # ============================================

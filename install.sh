@@ -70,8 +70,12 @@ echo ""
 echo "[2/7] 下载项目文件..."
 echo "-------------------------------------------"
 
-echo ">> git clone https://github.com/Mcloud136/admin.git ./"
-git clone https://github.com/Mcloud136/admin.git ./
+echo ">> git clone https://github.com/Mcloud136/admin.git (temp)"
+TEMP_DIR=$(mktemp -d)
+git clone --depth 1 https://github.com/Mcloud136/admin.git "$TEMP_DIR"
+# Move all files (except install script) to working directory
+cp -a "$TEMP_DIR"/. "$WORK_DIR/"
+rm -rf "$TEMP_DIR"
 echo "[OK] 项目文件下载完成"
 
 # ============================================
