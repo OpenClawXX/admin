@@ -131,14 +131,9 @@ echo ""
 echo "[4/9] 配置数据库密码..."
 echo "-------------------------------------------"
 
-# 生成随机数据库密码（在克隆成功后生成，避免克隆失败时留下密码文件）
+# 生成随机数据库密码
 DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
 echo "[OK] 已生成随机数据库密码"
-
-# 保存密码到临时文件供安装向导读取
-echo "$DB_PASSWORD" > .db_password
-chmod 600 .db_password
-echo "[OK] 密码已保存到 .db_password"
 
 echo ">> 确保 PostgreSQL 运行"
 # 创建集群（如果不存在）并启动
@@ -147,8 +142,16 @@ systemctl start postgresql || true
 sleep 2
 
 echo ">> 设置 postgres 用户密码"
-sudo -u postgres psql -c "ALTER USER postgres PASSWORD '${DB_PASSWORD}';"
-echo "[OK] 数据库密码配置完成"
+if sudo -u postgres psql -c "ALTER USER postgres PASSWORD '${DB_PASSWORD}';"; then
+    echo "[OK] 数据库密码配置完成"
+    # 确认成功后才保存密码文件供安装向导读取
+    echo "$DB_PASSWORD" > .db_password
+    chmod 600 .db_password
+    echo "[OK] 密码已保存到 .db_password"
+else
+    echo "[ERROR] 数据库密码设置失败"
+    exit 1
+fi
 
 # ============================================
 echo ""
