@@ -73,7 +73,7 @@ curl -fsSL https://gitee.com/wxbns/Team-Management/raw/main/install-cn.sh | sudo
 1. 安装 Nginx 和 PostgreSQL
 2. 将 `index.html` 和 `assets/` 放到 Nginx 网站目录
 3. 运行 `./ops-supervisor`（自动启动 ops-server）
-4. 配置 Nginx 反向代理 `/api/` → `http://127.0.0.1:1365`
+4. 配置 Nginx 反向代理 `/api/` → `http://127.0.0.1:8080`
 5. 访问网站，安装向导自动引导完成配置
 
 ## License
