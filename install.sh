@@ -170,8 +170,8 @@ fi
 
 echo ">> 测试 Nginx 配置"
 nginx -t
-echo ">> 重载 Nginx"
-systemctl reload nginx || systemctl restart nginx
+echo ">> 重启 Nginx（确保新组权限生效）"
+systemctl restart nginx
 echo "[OK] Nginx 配置完成"
 
 # ============================================
