@@ -297,11 +297,8 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 300s;
-    }
-
-    location /swagger/ {
-        proxy_pass http://127.0.0.1:8080/swagger/;
     }
 
     location / {
@@ -319,9 +316,11 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml;
-    gzip_min_length 1024;
+    # Brotli 压缩（替代 gzip）
+    brotli on;
+    brotli_types text/plain text/css application/json application/javascript text/xml image/svg+xml application/xml application/xml+rss text/javascript;
+    brotli_comp_level 6;
+    brotli_min_length 1024;
 }
 NGINXEOF
 
@@ -414,8 +413,6 @@ echo "    3. 平台名称和公司名称"
 echo ""
 echo "  [NOTE] 数据库密码已保存到 .db_password，安装向导会自动读取"
 echo "  [NOTE] 安装完成后 .db_password 将自动删除"
-echo ""
-echo "  API 文档: http://${SERVER_IP}/swagger/index.html"
 echo ""
 echo "  服务管理命令:"
 echo "    systemctl start ops-platform    # 启动"
