@@ -154,6 +154,26 @@ else
     exit 1
 fi
 
+# PostgreSQL 性能优化
+echo ">> 优化 PostgreSQL 配置"
+PG_CONF=$(sudo -u postgres psql -t -c "SHOW config_file;" 2>/dev/null | tr -d ' ')
+if [ -n "$PG_CONF" ]; then
+    cat >> "$PG_CONF" << PGEOF
+
+# Performance tuning
+shared_buffers = 2GB
+work_mem = 64MB
+effective_cache_size = 4GB
+random_page_cost = 1.1
+checkpoint_completion_target = 0.9
+wal_buffers = 64MB
+default_statistics_target = 100
+PGEOF
+    systemctl restart postgresql || true
+    sleep 2
+    echo "[OK] PostgreSQL 性能优化完成"
+fi
+
 # ============================================
 echo ""
 echo "[4/7] 设置文件权限..."
@@ -206,6 +226,8 @@ server {
 
     location /api/ {
         proxy_pass http://127.0.0.1:8080/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -215,24 +237,23 @@ server {
 
     location / {
         sendfile off;
-        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Cache-Control "no-cache, no-store, must-revalidate, no-transform" always;
         add_header Pragma "no-cache" always;
         add_header Expires "0" always;
-        add_header X-Content-Type-Options "nosniff" always;
-        add_header X-Frame-Options "SAMEORIGIN" always;
         try_files \$uri \$uri/ /index.html;
     }
 
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
-        expires 30d;
-        add_header Cache-Control "public, immutable";
+        sendfile off;
+        add_header Cache-Control "public, max-age=2592000, immutable, no-transform" always;
+        add_header X-Content-Type-Options "nosniff" always;
     }
 
-    # 压缩配置
-    gzip off;
+    # Gzip compression
+    gzip on;
+    gzip_comp_level 7;
     gzip_vary on;
     gzip_proxied any;
-    gzip_comp_level 6;
     gzip_types text/plain text/css application/json application/javascript text/xml image/svg+xml application/xml application/xml+rss text/javascript;
     gzip_min_length 1024;
 }
