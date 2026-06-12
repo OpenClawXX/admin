@@ -51,6 +51,10 @@ echo ""
 echo "[1/7] 安装系统依赖..."
 echo "-------------------------------------------"
 
+# 确保 curl 和 gpg 可用
+apt-get update -qq 2>/dev/null
+apt-get install -y curl gpg 2>/dev/null || true
+
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     CODENAME=$(lsb_release -cs)
 
