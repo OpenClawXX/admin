@@ -7,8 +7,7 @@ cleanup() {
         echo ""
         echo "[ERROR] 安装失败 (exit code: $exit_code)"
         echo "[ERROR] 请检查错误信息后重试"
-        # Clean up temp password file on failure
-        rm -f .db_password
+        echo "[NOTE] 数据库密码已保存在 .db_password，修复问题后可重新运行安装脚本"
     fi
 }
 trap cleanup EXIT
