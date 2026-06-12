@@ -186,10 +186,7 @@ echo "-------------------------------------------"
 SERVER_IP=$(hostname -I | awk '{print $1}')
 echo ">> 服务器 IP: $SERVER_IP"
 
-NGINX_CONF="/etc/nginx/sites-available/ops-platform"
-if [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "rocky" ]; then
-    NGINX_CONF="/etc/nginx/conf.d/ops-platform.conf"
-fi
+NGINX_CONF="/etc/nginx/conf.d/ops-platform.conf"
 
 echo ">> 写入 Nginx 配置: $NGINX_CONF"
 cat > "$NGINX_CONF" << NGINXEOF
@@ -241,12 +238,6 @@ server {
     gzip_min_length 1024;
 }
 NGINXEOF
-
-if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-    echo ">> 创建 sites-enabled 软链接"
-    ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/ops-platform
-    rm -f /etc/nginx/sites-enabled/default
-fi
 
 echo ">> 测试 Nginx 配置"
 nginx -t
