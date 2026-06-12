@@ -98,10 +98,17 @@ echo "[2/9] 安装系统依赖..."
 echo "-------------------------------------------"
 
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-    # 安装最新 PostgreSQL 18
+    CODENAME=$(lsb_release -cs)
+
+    # 添加 Nginx 官方主线源
+    echo ">> 添加 Nginx 官方主线源"
+    curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nginx.gpg 2>/dev/null || \
+    wget -qO- https://nginx.org/keys/nginx_signing.key | apt-key add - 2>/dev/null
+    echo "deb http://nginx.org/packages/mainline/ubuntu ${CODENAME} nginx" > /etc/apt/sources.list.d/nginx.list
+
+    # 添加 PostgreSQL 官方源
     echo ">> 添加 PostgreSQL 官方源"
-    PG_CODENAME=$(lsb_release -cs)
-    # Ubuntu 20.04 focal 已不在官方支持列表，使用 jammy 代替
+    PG_CODENAME="$CODENAME"
     if [ "$PG_CODENAME" = "focal" ]; then
         PG_CODENAME="jammy"
     fi
@@ -112,74 +119,11 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     echo ">> apt-get update"
     apt-get update
 
+    echo ">> 安装 Nginx 最新主线版本"
+    apt-get install -y nginx
+
     echo ">> 安装 PostgreSQL 18"
     apt-get install -y postgresql-18 postgresql-client-18
-
-    # 安装 Nginx 1.31（下载官方二进制）
-    echo ">> 安装 Nginx 1.31（含 HTTP/3 + Brotli）"
-    NGINX_VER="1.31.1"
-    apt-get install -y libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev build-essential cmake 2>/dev/null || true
-
-    cd /tmp
-
-    # 克隆 Brotli 模块
-    echo ">> 下载 ngx_brotli 模块"
-    git clone --depth 1 https://github.com/google/ngx_brotli.git 2>/dev/null
-    cd ngx_brotli && git submodule update --init && cd /tmp
-
-    # 下载 Nginx 源码
-    curl -fsSL "http://nginx.org/download/nginx-${NGINX_VER}.tar.gz" -o nginx.tar.gz
-    tar xzf nginx.tar.gz
-    cd nginx-${NGINX_VER}
-
-    # 编译（含 HTTP/3 + Brotli + 常用模块）
-    ./configure \
-        --prefix=/etc/nginx \
-        --sbin-path=/usr/sbin/nginx \
-        --modules-path=/usr/lib64/nginx/modules \
-        --conf-path=/etc/nginx/nginx.conf \
-        --error-log-path=/var/log/nginx/error.log \
-        --http-log-path=/var/log/nginx/access.log \
-        --pid-path=/var/run/nginx.pid \
-        --with-http_ssl_module \
-        --with-http_v2_module \
-        --with-http_v3_module \
-        --with-http_gzip_static_module \
-        --with-http_realip_module \
-        --with-http_stub_status_module \
-        --with-http_secure_link_module \
-        --with-pcre \
-        --add-module=/tmp/ngx_brotli
-
-    make -j$(nproc)
-    make install
-    cd "$WORK_DIR"
-    rm -rf /tmp/nginx-* /tmp/nginx.tar.gz /tmp/ngx_brotli
-
-    # 创建 systemd 服务文件
-    cat > /etc/systemd/system/nginx.service << 'NGINXSVC'
-[Unit]
-Description=nginx - high performance web server
-Documentation=http://nginx.org/en/docs/
-After=network.target remote-fs.target nss-lookup.target
-
-[Service]
-Type=forking
-PIDFile=/var/run/nginx.pid
-ExecStartPre=/usr/sbin/nginx -t
-ExecStart=/usr/sbin/nginx
-ExecReload=/bin/kill -s HUP $MAINPID
-ExecStop=/bin/kill -s QUIT $MAINPID
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-NGINXSVC
-    systemctl daemon-reload
-    systemctl enable nginx
-
-    # 创建必要目录
-    mkdir -p /var/log/nginx /var/cache/nginx /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled
 
 elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; then
     # 安装最新 PostgreSQL
@@ -321,11 +265,13 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # Brotli 压缩（替代 gzip）
-    brotli on;
-    brotli_types text/plain text/css application/json application/javascript text/xml image/svg+xml application/xml application/xml+rss text/javascript;
-    brotli_comp_level 6;
-    brotli_min_length 1024;
+    # 压缩配置
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css application/json application/javascript text/xml image/svg+xml application/xml application/xml+rss text/javascript;
+    gzip_min_length 1024;
 }
 NGINXEOF
 
