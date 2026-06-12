@@ -239,6 +239,9 @@ server {
 }
 NGINXEOF
 
+# 移除默认配置避免冲突
+rm -f /etc/nginx/conf.d/default.conf
+
 echo ">> 测试 Nginx 配置"
 nginx -t
 echo ">> 重启 Nginx（确保新组权限生效）"
@@ -281,7 +284,8 @@ systemctl daemon-reload
 echo ">> 设置文件权限"
 chown -R ops-platform:ops-platform "$WORK_DIR"
 # Allow Nginx (www-data) to read static files
-usermod -a -G ops-platform www-data
+usermod -a -G ops-platform nginx 2>&1 || true
+usermod -a -G ops-platform www-data 2>&1 || true
 # Directories need execute permission for traversal
 chmod 750 "$WORK_DIR"
 chmod 750 "$WORK_DIR/assets" 2>/dev/null || true
