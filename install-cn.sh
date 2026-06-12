@@ -98,21 +98,48 @@ echo "[2/9] 安装系统依赖..."
 echo "-------------------------------------------"
 
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+    # 安装最新 PostgreSQL
+    echo ">> 添加 PostgreSQL 官方源"
+    sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg 2>/dev/null || \
+    wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - 2>/dev/null
+
+    # 安装最新 Nginx（主线版本，支持 Brotli）
+    echo ">> 添加 Nginx 官方源"
+    curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nginx.gpg 2>/dev/null || \
+    wget -qO- https://nginx.org/keys/nginx_signing.key | apt-key add - 2>/dev/null
+    echo "deb http://nginx.org/packages/mainline/ubuntu $(lsb_release -cs) nginx" > /etc/apt/sources.list.d/nginx.list
+
     echo ">> apt-get update"
     apt-get update
-    echo ""
-    echo ">> apt-get install nginx postgresql postgresql-client"
-    apt-get install -y nginx postgresql postgresql-client
+
+    echo ">> 安装 PostgreSQL 最新版本"
+    apt-get install -y postgresql postgresql-client
+
+    echo ">> 安装 Nginx 最新版本 + Brotli 模块"
+    apt-get install -y nginx libnginx-mod-brotli 2>/dev/null || apt-get install -y nginx
+
 elif [ "$OS" = "centos" ] || [ "$OS" = "rocky" ] || [ "$OS" = "almalinux" ]; then
-    echo ">> yum install nginx postgresql-server postgresql"
-    yum install -y nginx postgresql-server postgresql
-    echo ""
+    # 安装最新 PostgreSQL
+    echo ">> 添加 PostgreSQL 官方源"
+    yum install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-$(rpm -E %{rhel})-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+    yum -y module disable postgresql
+    yum install -y postgresql16-server postgresql16
+
+    echo ">> 安装 Nginx"
+    yum install -y epel-release
+    yum install -y nginx
+
     echo ">> 初始化 PostgreSQL"
-    postgresql-setup --initdb || true
-    echo ">> 启动 PostgreSQL"
-    systemctl enable postgresql
-    systemctl start postgresql
+    /usr/pgsql-16/bin/postgresql-16-setup initdb
+    systemctl enable postgresql-16
+    systemctl start postgresql-16
 fi
+
+# 获取 PostgreSQL 版本号
+PG_VERSION=$(psql --version | grep -oP '\d+' | head -1)
+echo "[OK] PostgreSQL 版本: $PG_VERSION"
+echo "[OK] 系统依赖安装完成"
 
 # ============================================
 echo ""
@@ -137,7 +164,7 @@ echo "[OK] 已生成随机数据库密码"
 
 echo ">> 确保 PostgreSQL 运行"
 # 创建集群（如果不存在）并启动
-pg_createcluster 12 main --start 2>/dev/null || true
+pg_createcluster "$PG_VERSION" main --start 2>/dev/null || true
 systemctl start postgresql || true
 sleep 2
 
