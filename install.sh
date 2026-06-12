@@ -60,20 +60,22 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
 
     # 添加 Nginx 官方主线源
     echo ">> 添加 Nginx 官方主线源"
-    curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nginx.gpg 2>/dev/null || \
-    wget -qO- https://nginx.org/keys/nginx_signing.key | apt-key add - 2>/dev/null
-    echo "deb http://nginx.org/packages/mainline/ubuntu ${CODENAME} nginx" > /etc/apt/sources.list.d/nginx.list
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL https://nginx.org/keys/nginx_signing.key -o /tmp/nginx.key 2>/dev/null
+    gpg --dearmor -o /etc/apt/keyrings/nginx.gpg < /tmp/nginx.key 2>/dev/null
+    rm -f /tmp/nginx.key
+    echo "deb [signed-by=/etc/apt/keyrings/nginx.gpg] http://nginx.org/packages/mainline/ubuntu ${CODENAME} nginx" > /etc/apt/sources.list.d/nginx.list
 
     # 添加 PostgreSQL 官方源
     echo ">> 添加 PostgreSQL 官方源"
     PG_CODENAME="$CODENAME"
-    # Ubuntu 20.04 focal 已不在官方支持列表，使用 jammy 代替
     if [ "$PG_CODENAME" = "focal" ]; then
         PG_CODENAME="jammy"
     fi
-    sh -c "echo \"deb http://apt.postgresql.org/pub/repos/apt ${PG_CODENAME}-pgdg main\" > /etc/apt/sources.list.d/pgdg.list"
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg 2>/dev/null || \
-    wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - 2>/dev/null
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.key 2>/dev/null
+    gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg < /tmp/pgdg.key 2>/dev/null
+    rm -f /tmp/pgdg.key
+    echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt ${PG_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 
     echo ">> apt-get update"
     apt-get update
