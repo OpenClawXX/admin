@@ -113,7 +113,7 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     apt-get update
 
     echo ">> 安装 PostgreSQL 18"
-    apt-get install -y postgresql-18 postgresql-client-18 2>/dev/null || apt-get install -y postgresql postgresql-client
+    apt-get install -y postgresql-18 postgresql-client-18
 
     # 安装 Nginx 1.31（下载官方二进制）
     echo ">> 安装 Nginx 1.31（含 HTTP/3 + Brotli）"
