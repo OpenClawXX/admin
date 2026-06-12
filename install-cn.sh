@@ -111,23 +111,45 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     apt-get install -y postgresql-18 postgresql-client-18 2>/dev/null || apt-get install -y postgresql postgresql-client
 
     # 安装 Nginx 1.31（下载官方二进制）
-    echo ">> 安装 Nginx 1.31"
+    echo ">> 安装 Nginx 1.31（含 HTTP/3 + Brotli）"
     NGINX_VER="1.31.1"
-    apt-get install -y libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev 2>/dev/null || true
+    apt-get install -y libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev build-essential cmake 2>/dev/null || true
+
     cd /tmp
+
+    # 克隆 Brotli 模块
+    echo ">> 下载 ngx_brotli 模块"
+    git clone --depth 1 https://github.com/google/ngx_brotli.git 2>/dev/null
+    cd ngx_brotli && git submodule update --init && cd /tmp
+
+    # 下载 Nginx 源码
     curl -fsSL "http://nginx.org/download/nginx-${NGINX_VER}.tar.gz" -o nginx.tar.gz
     tar xzf nginx.tar.gz
     cd nginx-${NGINX_VER}
-    ./configure --prefix=/etc/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules \
-        --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log \
-        --http-log-path=/var/log/nginx/access.log --pid-path=/var/run/nginx.pid \
-        --with-http_ssl_module --with-http_v2_module --with-http_gzip_static_module \
-        --with-http_realip_module --with-http_stub_status_module \
-        --with-pcre --with-http_secure_link_module
+
+    # 编译（含 HTTP/3 + Brotli + 常用模块）
+    ./configure \
+        --prefix=/etc/nginx \
+        --sbin-path=/usr/sbin/nginx \
+        --modules-path=/usr/lib64/nginx/modules \
+        --conf-path=/etc/nginx/nginx.conf \
+        --error-log-path=/var/log/nginx/error.log \
+        --http-log-path=/var/log/nginx/access.log \
+        --pid-path=/var/run/nginx.pid \
+        --with-http_ssl_module \
+        --with-http_v2_module \
+        --with-http_v3_module \
+        --with-http_gzip_static_module \
+        --with-http_realip_module \
+        --with-http_stub_status_module \
+        --with-http_secure_link_module \
+        --with-pcre \
+        --add-module=/tmp/ngx_brotli
+
     make -j$(nproc)
     make install
     cd "$WORK_DIR"
-    rm -rf /tmp/nginx-* /tmp/nginx.tar.gz
+    rm -rf /tmp/nginx-* /tmp/nginx.tar.gz /tmp/ngx_brotli
 
     # 创建 systemd 服务文件
     cat > /etc/systemd/system/nginx.service << 'NGINXSVC'
