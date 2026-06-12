@@ -52,49 +52,85 @@ echo "[1/7] 安装系统依赖..."
 echo "-------------------------------------------"
 
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-    # 安装最新 PostgreSQL
+    # 安装最新 PostgreSQL 18
     echo ">> 添加 PostgreSQL 官方源"
     sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg 2>/dev/null || \
     wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - 2>/dev/null
 
-    # 安装最新 Nginx（主线版本，支持 Brotli）
-    echo ">> 添加 Nginx 官方源"
-    curl -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/nginx.gpg 2>/dev/null || \
-    wget -qO- https://nginx.org/keys/nginx_signing.key | apt-key add - 2>/dev/null
-    echo "deb http://nginx.org/packages/mainline/ubuntu $(lsb_release -cs) nginx" > /etc/apt/sources.list.d/nginx.list
-
     echo ">> apt-get update"
     apt-get update
 
-    echo ">> 安装 PostgreSQL 最新版本"
-    apt-get install -y postgresql postgresql-client
+    echo ">> 安装 PostgreSQL 18"
+    apt-get install -y postgresql-18 postgresql-client-18 2>/dev/null || apt-get install -y postgresql postgresql-client
 
-    echo ">> 安装 Nginx 最新版本 + Brotli 模块"
-    apt-get install -y nginx libnginx-mod-brotli 2>/dev/null || apt-get install -y nginx
+    # 安装 Nginx 1.31（下载官方二进制）
+    echo ">> 安装 Nginx 1.31"
+    NGINX_VER="1.31.1"
+    apt-get install -y libpcre3 libpcre3-dev zlib1g zlib1g-dev libssl-dev 2>/dev/null || true
+    cd /tmp
+    curl -fsSL "http://nginx.org/download/nginx-${NGINX_VER}.tar.gz" -o nginx.tar.gz
+    tar xzf nginx.tar.gz
+    cd nginx-${NGINX_VER}
+    ./configure --prefix=/etc/nginx --sbin-path=/usr/sbin/nginx --modules-path=/usr/lib64/nginx/modules \
+        --conf-path=/etc/nginx/nginx.conf --error-log-path=/var/log/nginx/error.log \
+        --http-log-path=/var/log/nginx/access.log --pid-path=/var/run/nginx.pid \
+        --with-http_ssl_module --with-http_v2_module --with-http_gzip_static_module \
+        --with-http_realip_module --with-http_stub_status_module \
+        --with-pcre --with-http_secure_link_module
+    make -j$(nproc)
+    make install
+    cd "$WORK_DIR"
+    rm -rf /tmp/nginx-* /tmp/nginx.tar.gz
+
+    # 创建 systemd 服务文件
+    cat > /etc/systemd/system/nginx.service << 'NGINXSVC'
+[Unit]
+Description=nginx - high performance web server
+Documentation=http://nginx.org/en/docs/
+After=network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=forking
+PIDFile=/var/run/nginx.pid
+ExecStartPre=/usr/sbin/nginx -t
+ExecStart=/usr/sbin/nginx
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+NGINXSVC
+    systemctl daemon-reload
+    systemctl enable nginx
+
+    # 创建必要目录
+    mkdir -p /var/log/nginx /var/cache/nginx /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled
 
 elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "rocky" ]; then
     # 安装最新 PostgreSQL
     echo ">> 添加 PostgreSQL 官方源"
     yum install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-$(rpm -E %{rhel})-x86_64/pgdg-redhat-repo-latest.noarch.rpm
     yum -y module disable postgresql
-    yum install -y postgresql16-server postgresql16
+    yum install -y postgresql18-server postgresql18
 
     echo ">> 安装 Nginx"
     yum install -y epel-release
     yum install -y nginx
 
     echo ">> 初始化 PostgreSQL"
-    /usr/pgsql-16/bin/postgresql-16-setup initdb
-    systemctl enable postgresql-16
-    systemctl start postgresql-16
+    /usr/pgsql-18/bin/postgresql-18-setup initdb
+    systemctl enable postgresql-18
+    systemctl start postgresql-18
 else
     echo "[WARN] 未知系统，请手动安装 Nginx 和 PostgreSQL"
 fi
 
 # 获取 PostgreSQL 版本号
-PG_VERSION=$(psql --version | grep -oP '\d+' | head -1)
+PG_VERSION=$(psql --version 2>/dev/null | grep -oP '\d+' | head -1)
 echo "[OK] PostgreSQL 版本: $PG_VERSION"
+echo "[OK] Nginx 版本: $(nginx -v 2>&1 | grep -oP '[\d.]+')"
 echo "[OK] 系统依赖安装完成"
 
 # ============================================
