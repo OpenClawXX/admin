@@ -230,7 +230,7 @@ server {
     }
 
     # 压缩配置
-    gzip on;
+    gzip off;
     gzip_vary on;
     gzip_proxied any;
     gzip_comp_level 6;
