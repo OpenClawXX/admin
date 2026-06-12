@@ -120,6 +120,9 @@ echo "-------------------------------------------"
 
 echo ">> git clone https://github.com/Mcloud136/admin.git (temp)"
 TEMP_DIR=$(mktemp -d)
+# 停止旧服务（避免文件占用）
+systemctl stop ops-platform 2>/dev/null || true
+sleep 1
 git clone --depth 1 https://github.com/Mcloud136/admin.git "$TEMP_DIR"
 cp -a "$TEMP_DIR"/. "$WORK_DIR/"
 rm -rf "$TEMP_DIR"
