@@ -62,6 +62,7 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     echo ">> 添加 Nginx 官方主线源"
     mkdir -p /etc/apt/keyrings
     curl -fsSL https://nginx.org/keys/nginx_signing.key -o /tmp/nginx.key 2>/dev/null
+    rm -f /etc/apt/keyrings/nginx.gpg
     gpg --batch --dearmor -o /etc/apt/keyrings/nginx.gpg < /tmp/nginx.key 2>/dev/null
     rm -f /tmp/nginx.key
     echo "deb [signed-by=/etc/apt/keyrings/nginx.gpg] http://nginx.org/packages/mainline/ubuntu ${CODENAME} nginx" > /etc/apt/sources.list.d/nginx.list
@@ -73,6 +74,7 @@ if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
         PG_CODENAME="jammy"
     fi
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.key 2>/dev/null
+    rm -f /etc/apt/keyrings/pgdg.gpg
     gpg --batch --dearmor -o /etc/apt/keyrings/pgdg.gpg < /tmp/pgdg.key 2>/dev/null
     rm -f /tmp/pgdg.key
     echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt ${PG_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list
