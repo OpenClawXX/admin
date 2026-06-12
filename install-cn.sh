@@ -100,7 +100,12 @@ echo "-------------------------------------------"
 if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
     # 安装最新 PostgreSQL 18
     echo ">> 添加 PostgreSQL 官方源"
-    sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+    PG_CODENAME=$(lsb_release -cs)
+    # Ubuntu 20.04 focal 已不在官方支持列表，使用 jammy 代替
+    if [ "$PG_CODENAME" = "focal" ]; then
+        PG_CODENAME="jammy"
+    fi
+    sh -c "echo \"deb http://apt.postgresql.org/pub/repos/apt ${PG_CODENAME}-pgdg main\" > /etc/apt/sources.list.d/pgdg.list"
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg 2>/dev/null || \
     wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - 2>/dev/null
 
