@@ -209,6 +209,11 @@ NGINX_CONF="/etc/nginx/conf.d/ops-platform.conf"
 
 echo ">> 写入 Nginx 配置: $NGINX_CONF"
 cat > "$NGINX_CONF" << NGINXEOF
+upstream ops_backend {
+    server 127.0.0.1:8080;
+    keepalive 32;
+}
+
 server {
     listen 80;
     server_name _;
@@ -225,18 +230,26 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location /api/ {
-        proxy_pass http://127.0.0.1:8080/api/;
+        proxy_pass http://ops_backend/api/;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_read_timeout 300s;
+
+        proxy_connect_timeout 10s;
+        proxy_send_timeout    300s;
+        proxy_read_timeout    300s;
+
+        proxy_buffering on;
+        proxy_buffer_size       16k;
+        proxy_buffers           8 32k;
+        proxy_busy_buffers_size 64k;
     }
 
     location / {
-        sendfile off;
+        sendfile on;
         add_header Cache-Control "no-cache, no-store, must-revalidate, no-transform" always;
         add_header Pragma "no-cache" always;
         add_header Expires "0" always;
@@ -244,14 +257,14 @@ server {
     }
 
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
-        sendfile off;
+        sendfile on;
         add_header Cache-Control "public, max-age=2592000, immutable, no-transform" always;
         add_header X-Content-Type-Options "nosniff" always;
     }
 
     # Gzip compression
     gzip on;
-    gzip_comp_level 7;
+    gzip_comp_level 4;
     gzip_vary on;
     gzip_proxied any;
     gzip_types text/plain text/css application/json application/javascript text/xml image/svg+xml application/xml application/xml+rss text/javascript;
