@@ -264,7 +264,7 @@ server {
     }
 
     # Gzip compression
-    gzip on;
+    gzip off;
     gzip_comp_level 4;
     gzip_vary on;
     gzip_proxied any;
