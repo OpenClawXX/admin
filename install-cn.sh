@@ -301,12 +301,13 @@ server {
     }
 
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
+        gzip_static on;
         sendfile on;
         add_header Cache-Control "public, max-age=2592000, immutable, no-transform" always;
         add_header X-Content-Type-Options "nosniff" always;
     }
 
-    # Gzip compression
+    # Gzip compression (fallback for non-static responses)
     gzip on;
     gzip_comp_level 4;
     gzip_vary on;
