@@ -1,0 +1,1 @@
+import{d as f}from"./vendor-arco-BvQNa05t.js";function o(r){return r<1024?r+" B":r<1024*1024?(r/1024).toFixed(1)+" KB":(r/(1024*1024)).toFixed(1)+" MB"}function n(r){return r?f(r).format("YYYY-MM-DD HH:mm"):""}export{n as a,o as f};
