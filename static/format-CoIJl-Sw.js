@@ -1,0 +1,1 @@
+import{d as t}from"./vendor-arco-PmHwSu5j.js";function n(r){return r<1024?r+" B":r<1024*1024?(r/1024).toFixed(1)+" KB":(r/(1024*1024)).toFixed(1)+" MB"}function o(r){return r?t(r).format("YYYY-MM-DD HH:mm"):""}function a(r){return r?t(r).format("YYYY-MM-DD"):""}function i(r){return r?t(r).format("YYYY年M月"):""}export{i as a,n as b,o as c,a as f};
