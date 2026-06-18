@@ -161,12 +161,12 @@ echo ""
 echo "[3/9] 下载项目文件 (Gitee)..."
 echo "-------------------------------------------"
 
-echo ">> git clone https://github.com/Mcloud136/admin.git (temp)"
+echo ">> git clone https://gitee.com/wxbns/Team-Management.git (temp)"
 TEMP_DIR=$(mktemp -d)
 # 停止旧服务（避免文件占用）
 systemctl stop ops-platform 2>/dev/null || true
 sleep 1
-git clone --depth 1 https://github.com/Mcloud136/admin.git "$TEMP_DIR"
+git clone --depth 1 https://gitee.com/wxbns/Team-Management.git "$TEMP_DIR"
 cp -a "$TEMP_DIR"/. "$WORK_DIR/"
 rm -rf "$TEMP_DIR"
 echo "[OK] 项目文件下载完成"
