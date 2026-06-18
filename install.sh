@@ -194,7 +194,7 @@ echo "[5/7] 创建数据库..."
 echo "-------------------------------------------"
 
 echo ">> CREATE DATABASE ops_platform"
-sudo -u postgres psql -c "CREATE DATABASE ops_platform;" || echo "   数据库已存在，跳过"
+sudo -u postgres psql -c "CREATE DATABASE ops_platform ENCODING 'UTF8';" || echo "   数据库已存在，跳过"
 echo "[OK] 数据库准备完成"
 
 # ============================================
@@ -208,26 +208,55 @@ echo ">> 服务器 IP: $SERVER_IP"
 NGINX_CONF="/etc/nginx/conf.d/ops-platform.conf"
 
 echo ">> 写入 Nginx 配置: $NGINX_CONF"
+
+# Generate self-signed SSL certificate
+mkdir -p /etc/nginx/ssl
+if [ ! -f /etc/nginx/ssl/server.crt ]; then
+    echo ">> 生成自签名 SSL 证书"
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+        -keyout /etc/nginx/ssl/server.key \
+        -out /etc/nginx/ssl/server.crt \
+        -subj "/CN=$SERVER_IP/O=OpsPlatform" 2>/dev/null
+    echo "[OK] SSL 证书已生成"
+fi
+
 cat > "$NGINX_CONF" << NGINXEOF
 upstream ops_backend {
     server 127.0.0.1:8080;
     keepalive 32;
 }
 
+# HTTP -> redirect to HTTPS
 server {
     listen 80;
     server_name _;
+    return 301 https://\$host\$request_uri;
+}
 
-    root $WORK_DIR;
+# HTTPS
+server {
+    listen 443 ssl;
+    server_name _;
+
+    ssl_certificate /etc/nginx/ssl/server.crt;
+    ssl_certificate_key /etc/nginx/ssl/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    root __WORK_DIR__;
     index index.html;
-
     client_max_body_size 50m;
+
+    keepalive_timeout 65;
 
     # Security headers
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
 
     location /api/ {
         proxy_pass http://ops_backend/api/;
@@ -263,15 +292,12 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
     }
 
-    # Gzip compression
     gzip off;
-    gzip_comp_level 4;
-    gzip_vary on;
-    gzip_proxied any;
-    gzip_types text/plain text/css application/json application/javascript text/xml image/svg+xml application/xml application/xml+rss text/javascript;
-    gzip_min_length 1024;
 }
 NGINXEOF
+
+# Replace placeholder with actual working directory
+sed -i "s|__WORK_DIR__|$WORK_DIR|g" "$NGINX_CONF"
 
 # 移除默认配置避免冲突
 rm -f /etc/nginx/conf.d/default.conf
@@ -322,7 +348,7 @@ usermod -a -G ops-platform nginx 2>&1 || true
 usermod -a -G ops-platform www-data 2>&1 || true
 # Directories need execute permission for traversal
 chmod 750 "$WORK_DIR"
-chmod 750 "$WORK_DIR/assets" 2>/dev/null || true
+chmod 750 "$WORK_DIR/static" 2>/dev/null || true
 chmod 750 "$WORK_DIR/config" 2>/dev/null || true
 chmod 750 "$WORK_DIR/internal" 2>/dev/null || true
 chmod 750 "$WORK_DIR/uploads" 2>/dev/null || true
@@ -330,8 +356,8 @@ chmod 750 "$WORK_DIR/uploads/branding" 2>/dev/null || true
 chmod 750 "$WORK_DIR/uploads/kb" 2>/dev/null || true
 # Static files readable by group
 chmod 640 "$WORK_DIR"/index.html 2>/dev/null || true
-chmod 640 "$WORK_DIR"/assets/*.js 2>/dev/null || true
-chmod 640 "$WORK_DIR"/assets/*.css 2>/dev/null || true
+chmod 640 "$WORK_DIR"/static/*.js 2>/dev/null || true
+chmod 640 "$WORK_DIR"/static/*.css 2>/dev/null || true
 chmod 750 "$WORK_DIR/ops-server" "$WORK_DIR/ops-supervisor"
 # Restart nginx (not reload) so workers pick up new group membership
 systemctl restart nginx 2>/dev/null || true
